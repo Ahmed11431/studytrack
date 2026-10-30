@@ -2,23 +2,35 @@ import { Fragment, useEffect, useMemo, useState, type CSSProperties } from "reac
 import {
   BookOpen,
   Check,
-  ChevronDown,
   CircleCheck,
   ClipboardCheck,
   LayoutGrid,
+  Pause,
+  Play,
   RotateCcw,
+  SkipForward,
   Sparkles,
   Target,
+  Timer,
+  TimerReset,
   Trophy,
 } from "lucide-react";
 
 const SUBJECTS = ["Web Programming", "DSA", "OS", "Arc", "Linear Algebra"] as const;
 const LECTURES = Array.from({ length: 12 }, (_, index) => index + 1);
 const STORAGE_KEY = "studytrack-progress-v1";
+const TIMER_STORAGE_KEY = "studytrack-pomodoro-v1";
 
 type Subject = (typeof SUBJECTS)[number];
 type ProgressState = Record<Subject, Record<number, { studied: boolean; solved: boolean }>>;
 type Filter = "all" | Subject;
+type TimerMode = "focus" | "break";
+type TimerState = { mode: TimerMode; secondsLeft: number; isRunning: boolean; sessionsCompleted: number };
+
+const TIMER_MODES: Record<TimerMode, { label: string; caption: string; duration: number }> = {
+  focus: { label: "تركيز", caption: "وقت المذاكرة", duration: 25 * 60 },
+  break: { label: "راحة", caption: "استراحة قصيرة", duration: 5 * 60 },
+};
 
 function createEmptyProgress(): ProgressState {
   return SUBJECTS.reduce((subjects, subject) => {
@@ -56,6 +68,29 @@ function percent(value: number, total: number) {
   return total === 0 ? 0 : Math.round((value / total) * 100);
 }
 
+function loadTimer(): TimerState {
+  const fallback: TimerState = { mode: "focus", secondsLeft: TIMER_MODES.focus.duration, isRunning: false, sessionsCompleted: 0 };
+  try {
+    const saved = JSON.parse(localStorage.getItem(TIMER_STORAGE_KEY) ?? "null") as Partial<TimerState> | null;
+    if (!saved || (saved.mode !== "focus" && saved.mode !== "break")) return fallback;
+    const duration = TIMER_MODES[saved.mode].duration;
+    return {
+      mode: saved.mode,
+      secondsLeft: typeof saved.secondsLeft === "number" ? Math.max(0, Math.min(saved.secondsLeft, duration)) : duration,
+      isRunning: saved.isRunning === true,
+      sessionsCompleted: typeof saved.sessionsCompleted === "number" ? Math.max(0, saved.sessionsCompleted) : 0,
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+function formatTimer(seconds: number) {
+  const minutes = Math.floor(seconds / 60).toString().padStart(2, "0");
+  const remainder = (seconds % 60).toString().padStart(2, "0");
+  return `${minutes}:${remainder}`;
+}
+
 function CheckCell({ checked, label, onClick }: { checked: boolean; label: string; onClick: () => void }) {
   return (
     <button
@@ -69,6 +104,70 @@ function CheckCell({ checked, label, onClick }: { checked: boolean; label: strin
       <span className="status-icon">{checked ? <Check size={16} strokeWidth={3} /> : <span />}</span>
       <span className="status-text">{checked ? "تم" : "—"}</span>
     </button>
+  );
+}
+
+function PomodoroTimer() {
+  const [timer, setTimer] = useState<TimerState>(() => loadTimer());
+  const mode = TIMER_MODES[timer.mode];
+
+  useEffect(() => {
+    localStorage.setItem(TIMER_STORAGE_KEY, JSON.stringify(timer));
+  }, [timer]);
+
+  useEffect(() => {
+    if (!timer.isRunning) return;
+    const interval = window.setInterval(() => {
+      setTimer((current) => {
+        if (current.secondsLeft > 1) return { ...current, secondsLeft: current.secondsLeft - 1 };
+        const nextMode: TimerMode = current.mode === "focus" ? "break" : "focus";
+        return {
+          mode: nextMode,
+          secondsLeft: TIMER_MODES[nextMode].duration,
+          isRunning: false,
+          sessionsCompleted: current.sessionsCompleted + Number(current.mode === "focus"),
+        };
+      });
+    }, 1000);
+    return () => window.clearInterval(interval);
+  }, [timer.isRunning]);
+
+  const chooseMode = (nextMode: TimerMode) => {
+    setTimer((current) => ({ ...current, mode: nextMode, secondsLeft: TIMER_MODES[nextMode].duration, isRunning: false }));
+  };
+
+  const resetTimer = () => {
+    setTimer((current) => ({ ...current, secondsLeft: mode.duration, isRunning: false }));
+  };
+
+  const skipMode = () => {
+    const nextMode: TimerMode = timer.mode === "focus" ? "break" : "focus";
+    setTimer((current) => ({ ...current, mode: nextMode, secondsLeft: TIMER_MODES[nextMode].duration, isRunning: false }));
+  };
+
+  const progress = ((mode.duration - timer.secondsLeft) / mode.duration) * 360;
+
+  return (
+    <section className={`pomodoro-card ${timer.mode === "break" ? "break-mode" : ""}`} aria-label="مؤقت بومودورو">
+      <div className="pomodoro-intro">
+        <div className="pomodoro-icon"><Timer size={19} /></div>
+        <div><span className="section-kicker">Pomodoro</span><h2>نظّم وقت مذاكرتك</h2><p>{mode.caption} — جلسة قصيرة بتركيز أعلى.</p></div>
+      </div>
+      <div className="pomodoro-modes" role="tablist" aria-label="وضع المؤقت">
+        {(Object.keys(TIMER_MODES) as TimerMode[]).map((item) => (
+          <button key={item} type="button" role="tab" aria-selected={timer.mode === item} className={timer.mode === item ? "active" : ""} onClick={() => chooseMode(item)}>{TIMER_MODES[item].label}<small>{TIMER_MODES[item].duration / 60} د</small></button>
+        ))}
+      </div>
+      <div className="pomodoro-clock" style={{ "--timer-progress": `${progress}deg` } as CSSProperties}>
+        <div><strong>{formatTimer(timer.secondsLeft)}</strong><span>{timer.isRunning ? "جاري الآن" : "جاهز للبدء"}</span></div>
+      </div>
+      <div className="pomodoro-controls">
+        <button type="button" className="timer-main-button" onClick={() => setTimer((current) => ({ ...current, isRunning: !current.isRunning }))} aria-label={timer.isRunning ? "إيقاف المؤقت" : "تشغيل المؤقت"}>{timer.isRunning ? <Pause size={15} /> : <Play size={15} />}{timer.isRunning ? "إيقاف مؤقت" : "ابدأ الآن"}</button>
+        <button type="button" className="timer-icon-button" onClick={resetTimer} aria-label="إعادة ضبط المؤقت" title="إعادة ضبط"><TimerReset size={17} /></button>
+        <button type="button" className="timer-icon-button" onClick={skipMode} aria-label="تخطي الوضع الحالي" title="تخطي"><SkipForward size={17} /></button>
+      </div>
+      <div className="pomodoro-sessions"><span className="session-dots" aria-hidden="true"><i className={timer.sessionsCompleted > 0 ? "filled" : ""} /><i className={timer.sessionsCompleted > 1 ? "filled" : ""} /><i className={timer.sessionsCompleted > 2 ? "filled" : ""} /><i className={timer.sessionsCompleted > 3 ? "filled" : ""} /></span><span>{timer.sessionsCompleted} جلسة تركيز مكتملة</span></div>
+    </section>
   );
 }
 
@@ -191,6 +290,8 @@ export default function Home() {
           </div>
           <div className="stat-quote"><span>✦</span> الإنجاز الصغير المتكرر يصنع الفرق الكبير.</div>
         </section>
+
+        <PomodoroTimer />
 
         <section className="workspace">
           <aside className="subject-sidebar">
