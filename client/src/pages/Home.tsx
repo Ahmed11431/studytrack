@@ -201,12 +201,16 @@ export default function Home() {
   const subjectStats = (subject: Subject) => {
     let completed = 0;
     let finishedLectures = 0;
+    let studied = 0;
+    let solved = 0;
     LECTURES.forEach((lecture) => {
       const item = progress[subject][lecture];
+      studied += Number(item.studied);
+      solved += Number(item.solved);
       completed += Number(item.studied) + Number(item.solved);
       finishedLectures += Number(item.studied && item.solved);
     });
-    return { completed, finishedLectures, total: LECTURES.length * 2 };
+    return { completed, finishedLectures, studied, solved, total: LECTURES.length * 2 };
   };
 
   const toggle = (subject: Subject, lecture: number, key: "studied" | "solved") => {
@@ -292,6 +296,22 @@ export default function Home() {
         </section>
 
         <PomodoroTimer />
+
+        <section className="subject-overview" aria-label="نسبة الإنجاز لكل مادة">
+          <div className="overview-header"><div><span className="section-kicker">نظرة سريعة</span><h2>تقدم المواد</h2></div><span className="overview-caption">كل خانة مكتملة تقرّبك خطوة</span></div>
+          <div className="overview-grid">
+            {SUBJECTS.map((subject, index) => {
+              const subjectProgress = subjectStats(subject);
+              const completion = percent(subjectProgress.completed, subjectProgress.total);
+              return (
+                <button key={subject} type="button" className={`overview-card ${filter === subject ? "selected" : ""}`} onClick={() => setFilter(subject)} aria-label={`عرض تقدم مادة ${subject}`}>
+                  <div className={`overview-symbol subject-${index + 1}`}>{subject.slice(0, 1)}</div>
+                  <div className="overview-card-main"><div className="overview-card-top"><span dir="ltr">{subject}</span><strong>{completion}%</strong></div><div className="overview-track"><span style={{ width: `${completion}%` }} /></div><div className="overview-card-bottom"><span>{subjectProgress.completed} من {subjectProgress.total} مهمة</span><span>{subjectProgress.finishedLectures}/12 محاضرة كاملة</span></div></div>
+                </button>
+              );
+            })}
+          </div>
+        </section>
 
         <section className="workspace">
           <aside className="subject-sidebar">
