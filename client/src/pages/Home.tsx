@@ -5,11 +5,13 @@ import {
   CircleCheck,
   ClipboardCheck,
   LayoutGrid,
+  Moon,
   Pause,
   Play,
   RotateCcw,
   SkipForward,
   Sparkles,
+  Sun,
   Target,
   Timer,
   TimerReset,
@@ -21,6 +23,7 @@ const STORAGE_KEY = "studytrack-progress-v1";
 const TIMER_STORAGE_KEY = "studytrack-pomodoro-v1";
 const TIME_LOG_STORAGE_KEY = "studytrack-time-log-v1";
 const SUBJECTS_STORAGE_KEY = "studytrack-subjects-v1";
+const THEME_STORAGE_KEY = "studytrack-theme-v1";
 
 type Subject = string;
 type SubjectConfig = { name: string; lectureCount: number; colorIndex: number };
@@ -320,6 +323,12 @@ export default function Home() {
   const [filter, setFilter] = useState<Filter>("all");
   const [savedPulse, setSavedPulse] = useState(false);
   const [timeLog, setTimeLog] = useState<TimeLog>(() => loadTimeLog(subjects));
+  const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem(THEME_STORAGE_KEY) === "dark");
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark-mode", isDarkMode);
+    localStorage.setItem(THEME_STORAGE_KEY, isDarkMode ? "dark" : "light");
+  }, [isDarkMode]);
 
   useEffect(() => {
     localStorage.setItem(SUBJECTS_STORAGE_KEY, JSON.stringify(subjects));
@@ -447,9 +456,12 @@ export default function Home() {
               <div className="brand-caption">خطة مذاكرة منظمة</div>
             </div>
           </div>
-          <div className={`save-state ${savedPulse ? "is-saving" : ""}`}>
-            <span className="save-dot" />
-            <span>يُحفظ تلقائياً</span>
+          <div className="topbar-actions">
+            <button type="button" className="theme-toggle" onClick={() => setIsDarkMode((current) => !current)} aria-label={isDarkMode ? "التبديل للوضع الفاتح" : "التبديل للوضع الداكن"} title={isDarkMode ? "الوضع الفاتح" : "الوضع الداكن"}>{isDarkMode ? <Sun size={16} /> : <Moon size={16} />}<span>{isDarkMode ? "فاتح" : "داكن"}</span></button>
+            <div className={`save-state ${savedPulse ? "is-saving" : ""}`}>
+              <span className="save-dot" />
+              <span>يُحفظ تلقائياً</span>
+            </div>
           </div>
         </header>
 
