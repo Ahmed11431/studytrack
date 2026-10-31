@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState, type CSSProperties } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import {
   BookOpen,
   Check,
@@ -20,12 +20,14 @@ const SUBJECTS = ["Web Programming", "DSA", "OS", "Arc", "Linear Algebra"] as co
 const LECTURES = Array.from({ length: 12 }, (_, index) => index + 1);
 const STORAGE_KEY = "studytrack-progress-v1";
 const TIMER_STORAGE_KEY = "studytrack-pomodoro-v1";
+const TIME_LOG_STORAGE_KEY = "studytrack-time-log-v1";
 
 type Subject = (typeof SUBJECTS)[number];
 type ProgressState = Record<Subject, Record<number, { studied: boolean; solved: boolean }>>;
 type Filter = "all" | Subject;
 type TimerMode = "focus" | "break";
-type TimerState = { mode: TimerMode; secondsLeft: number; isRunning: boolean; sessionsCompleted: number };
+type TimerState = { mode: TimerMode; secondsLeft: number; isRunning: boolean; sessionsCompleted: number; subject: Subject };
+type TimeLog = Record<Subject, Record<string, number>>;
 
 const TIMER_MODES: Record<TimerMode, { label: string; caption: string; duration: number }> = {
   focus: { label: "تركيز", caption: "وقت المذاكرة", duration: 25 * 60 },
@@ -69,7 +71,7 @@ function percent(value: number, total: number) {
 }
 
 function loadTimer(): TimerState {
-  const fallback: TimerState = { mode: "focus", secondsLeft: TIMER_MODES.focus.duration, isRunning: false, sessionsCompleted: 0 };
+  const fallback: TimerState = { mode: "focus", secondsLeft: TIMER_MODES.focus.duration, isRunning: false, sessionsCompleted: 0, subject: SUBJECTS[0] };
   try {
     const saved = JSON.parse(localStorage.getItem(TIMER_STORAGE_KEY) ?? "null") as Partial<TimerState> | null;
     if (!saved || (saved.mode !== "focus" && saved.mode !== "break")) return fallback;
@@ -79,6 +81,7 @@ function loadTimer(): TimerState {
       secondsLeft: typeof saved.secondsLeft === "number" ? Math.max(0, Math.min(saved.secondsLeft, duration)) : duration,
       isRunning: saved.isRunning === true,
       sessionsCompleted: typeof saved.sessionsCompleted === "number" ? Math.max(0, saved.sessionsCompleted) : 0,
+      subject: saved.subject && SUBJECTS.includes(saved.subject as Subject) ? saved.subject as Subject : SUBJECTS[0],
     };
   } catch {
     return fallback;
@@ -89,6 +92,50 @@ function formatTimer(seconds: number) {
   const minutes = Math.floor(seconds / 60).toString().padStart(2, "0");
   const remainder = (seconds % 60).toString().padStart(2, "0");
   return `${minutes}:${remainder}`;
+}
+
+function createEmptyTimeLog(): TimeLog {
+  return SUBJECTS.reduce((log, subject) => {
+    log[subject] = {};
+    return log;
+  }, {} as TimeLog);
+}
+
+function loadTimeLog(): TimeLog {
+  const empty = createEmptyTimeLog();
+  try {
+    const saved = JSON.parse(localStorage.getItem(TIME_LOG_STORAGE_KEY) ?? "null") as Partial<TimeLog> | null;
+    SUBJECTS.forEach((subject) => {
+      const subjectLog = saved?.[subject];
+      if (subjectLog && typeof subjectLog === "object") empty[subject] = Object.fromEntries(Object.entries(subjectLog).filter(([, value]) => typeof value === "number" && value >= 0));
+    });
+  } catch {
+    return empty;
+  }
+  return empty;
+}
+
+function localDateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function getCurrentWeekKeys() {
+  const today = new Date();
+  const monday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - ((today.getDay() + 6) % 7));
+  return Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(monday);
+    date.setDate(monday.getDate() + index);
+    return localDateKey(date);
+  });
+}
+
+function formatStudyTime(seconds: number) {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  return hours > 0 ? `${hours}س ${String(minutes).padStart(2, "0")}د` : `${minutes}د`;
 }
 
 function CheckCell({ checked, label, onClick }: { checked: boolean; label: string; onClick: () => void }) {
@@ -107,7 +154,7 @@ function CheckCell({ checked, label, onClick }: { checked: boolean; label: strin
   );
 }
 
-function PomodoroTimer() {
+function PomodoroTimer({ onStudySecond }: { onStudySecond: (subject: Subject) => void }) {
   const [timer, setTimer] = useState<TimerState>(() => loadTimer());
   const mode = TIMER_MODES[timer.mode];
 
@@ -118,6 +165,7 @@ function PomodoroTimer() {
   useEffect(() => {
     if (!timer.isRunning) return;
     const interval = window.setInterval(() => {
+      if (timer.mode === "focus") onStudySecond(timer.subject);
       setTimer((current) => {
         if (current.secondsLeft > 1) return { ...current, secondsLeft: current.secondsLeft - 1 };
         const nextMode: TimerMode = current.mode === "focus" ? "break" : "focus";
@@ -126,15 +174,18 @@ function PomodoroTimer() {
           secondsLeft: TIMER_MODES[nextMode].duration,
           isRunning: false,
           sessionsCompleted: current.sessionsCompleted + Number(current.mode === "focus"),
+          subject: current.subject,
         };
       });
     }, 1000);
     return () => window.clearInterval(interval);
-  }, [timer.isRunning]);
+  }, [onStudySecond, timer.isRunning, timer.mode, timer.subject]);
 
   const chooseMode = (nextMode: TimerMode) => {
     setTimer((current) => ({ ...current, mode: nextMode, secondsLeft: TIMER_MODES[nextMode].duration, isRunning: false }));
   };
+
+  const chooseSubject = (subject: Subject) => setTimer((current) => ({ ...current, subject }));
 
   const resetTimer = () => {
     setTimer((current) => ({ ...current, secondsLeft: mode.duration, isRunning: false }));
@@ -151,7 +202,7 @@ function PomodoroTimer() {
     <section className={`pomodoro-card ${timer.mode === "break" ? "break-mode" : ""}`} aria-label="مؤقت بومودورو">
       <div className="pomodoro-intro">
         <div className="pomodoro-icon"><Timer size={19} /></div>
-        <div><span className="section-kicker">Pomodoro</span><h2>نظّم وقت مذاكرتك</h2><p>{mode.caption} — جلسة قصيرة بتركيز أعلى.</p></div>
+        <div><span className="section-kicker">Pomodoro</span><h2>نظّم وقت مذاكرتك</h2><p>{mode.caption} — سجّل الوقت لمادة محددة.</p><label className="timer-subject">المادة الحالية<select value={timer.subject} onChange={(event) => chooseSubject(event.target.value as Subject)} aria-label="المادة الحالية">{SUBJECTS.map((subject) => <option key={subject} value={subject}>{subject}</option>)}</select></label></div>
       </div>
       <div className="pomodoro-modes" role="tablist" aria-label="وضع المؤقت">
         {(Object.keys(TIMER_MODES) as TimerMode[]).map((item) => (
@@ -171,10 +222,40 @@ function PomodoroTimer() {
   );
 }
 
+function WeeklyStudyReport({ timeLog }: { timeLog: TimeLog }) {
+  const weekKeys = getCurrentWeekKeys();
+  const rows = SUBJECTS.map((subject, index) => ({
+    subject,
+    index,
+    seconds: weekKeys.reduce((total, key) => total + (timeLog[subject][key] ?? 0), 0),
+  }));
+  const totalSeconds = rows.reduce((total, row) => total + row.seconds, 0);
+  const maxSeconds = Math.max(...rows.map((row) => row.seconds), 1);
+  const activeSubjects = rows.filter((row) => row.seconds > 0).length;
+
+  return (
+    <section className="weekly-report" aria-label="تقرير وقت المذاكرة الأسبوعي">
+      <div className="report-header"><div><span className="section-kicker">تحليل أسبوعي</span><h2>وقت المذاكرة حسب المادة</h2></div><div className="report-summary"><strong>{formatStudyTime(totalSeconds)}</strong><span>إجمالي هذا الأسبوع · {activeSubjects}/5 مواد نشطة</span></div></div>
+      <div className="report-rows">
+        {rows.map((row) => (
+          <div className="report-row" key={row.subject}>
+            <div className={`report-symbol subject-${row.index + 1}`}>{row.subject.slice(0, 1)}</div>
+            <div className="report-name" dir="ltr">{row.subject}</div>
+            <div className="report-track"><span style={{ width: `${(row.seconds / maxSeconds) * 100}%` }} /></div>
+            <strong className="report-time">{formatStudyTime(row.seconds)}</strong>
+          </div>
+        ))}
+      </div>
+      <p className="report-note">يُسجّل الوقت تلقائياً أثناء تشغيل جلسة التركيز، حسب المادة المختارة في المؤقت.</p>
+    </section>
+  );
+}
+
 export default function Home() {
   const [progress, setProgress] = useState<ProgressState>(() => loadProgress());
   const [filter, setFilter] = useState<Filter>("all");
   const [savedPulse, setSavedPulse] = useState(false);
+  const [timeLog, setTimeLog] = useState<TimeLog>(() => loadTimeLog());
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
@@ -182,6 +263,18 @@ export default function Home() {
     const timer = window.setTimeout(() => setSavedPulse(false), 900);
     return () => window.clearTimeout(timer);
   }, [progress]);
+
+  useEffect(() => {
+    localStorage.setItem(TIME_LOG_STORAGE_KEY, JSON.stringify(timeLog));
+  }, [timeLog]);
+
+  const recordStudySecond = useCallback((subject: Subject) => {
+    const today = localDateKey(new Date());
+    setTimeLog((current) => ({
+      ...current,
+      [subject]: { ...current[subject], [today]: (current[subject][today] ?? 0) + 1 },
+    }));
+  }, []);
 
   const stats = useMemo(() => {
     let completedTasks = 0;
@@ -295,7 +388,7 @@ export default function Home() {
           <div className="stat-quote"><span>✦</span> الإنجاز الصغير المتكرر يصنع الفرق الكبير.</div>
         </section>
 
-        <PomodoroTimer />
+        <PomodoroTimer onStudySecond={recordStudySecond} />
 
         <section className="subject-overview" aria-label="نسبة الإنجاز لكل مادة">
           <div className="overview-header"><div><span className="section-kicker">نظرة سريعة</span><h2>تقدم المواد</h2></div><span className="overview-caption">كل خانة مكتملة تقرّبك خطوة</span></div>
@@ -312,6 +405,8 @@ export default function Home() {
             })}
           </div>
         </section>
+
+        <WeeklyStudyReport timeLog={timeLog} />
 
         <section className="workspace">
           <aside className="subject-sidebar">
