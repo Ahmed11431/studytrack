@@ -1,9 +1,10 @@
-import { Fragment, useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   BookOpen,
   Check,
   CircleCheck,
   ClipboardCheck,
+  Download,
   LayoutGrid,
   Moon,
   Pause,
@@ -32,6 +33,7 @@ type Filter = "all" | Subject;
 type TimerMode = "focus" | "break";
 type TimerState = { mode: TimerMode; secondsLeft: number; isRunning: boolean; sessionsCompleted: number; subject: Subject };
 type TimeLog = Record<Subject, Record<string, number>>;
+type BeforeInstallPromptEvent = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: "accepted" | "dismissed" }> };
 
 const SUBJECT_COLORS = ["subject-1", "subject-2", "subject-3", "subject-4", "subject-5"];
 
@@ -324,11 +326,47 @@ export default function Home() {
   const [savedPulse, setSavedPulse] = useState(false);
   const [timeLog, setTimeLog] = useState<TimeLog>(() => loadTimeLog(subjects));
   const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem(THEME_STORAGE_KEY) === "dark");
+  const installPromptRef = useRef<BeforeInstallPromptEvent | null>(null);
+  const [canInstall, setCanInstall] = useState(false);
+  const [isInstalled, setIsInstalled] = useState(() => window.matchMedia?.("(display-mode: standalone)").matches || Boolean((navigator as Navigator & { standalone?: boolean }).standalone));
+  const [showInstallGuide, setShowInstallGuide] = useState(false);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark-mode", isDarkMode);
     localStorage.setItem(THEME_STORAGE_KEY, isDarkMode ? "dark" : "light");
   }, [isDarkMode]);
+
+  useEffect(() => {
+    const onBeforeInstallPrompt = (event: Event) => {
+      event.preventDefault();
+      installPromptRef.current = event as BeforeInstallPromptEvent;
+      setCanInstall(true);
+    };
+    const onAppInstalled = () => {
+      installPromptRef.current = null;
+      setCanInstall(false);
+      setIsInstalled(true);
+    };
+    window.addEventListener("beforeinstallprompt", onBeforeInstallPrompt);
+    window.addEventListener("appinstalled", onAppInstalled);
+    if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", onBeforeInstallPrompt);
+      window.removeEventListener("appinstalled", onAppInstalled);
+    };
+  }, []);
+
+  const installApp = async () => {
+    const promptEvent = installPromptRef.current;
+    if (!promptEvent) {
+      setShowInstallGuide(true);
+      return;
+    }
+    await promptEvent.prompt();
+    await promptEvent.userChoice;
+    installPromptRef.current = null;
+    setCanInstall(false);
+  };
 
   useEffect(() => {
     localStorage.setItem(SUBJECTS_STORAGE_KEY, JSON.stringify(subjects));
@@ -457,6 +495,7 @@ export default function Home() {
             </div>
           </div>
           <div className="topbar-actions">
+            {!isInstalled && <button type="button" className="install-button" onClick={installApp} aria-label="إضافة StudyTrack إلى الشاشة الرئيسية" title={canInstall ? "تثبيت التطبيق" : "طريقة إضافة التطبيق للشاشة الرئيسية"}><Download size={15} /><span>ثبّت التطبيق</span></button>}
             <button type="button" className="theme-toggle" onClick={() => setIsDarkMode((current) => !current)} aria-label={isDarkMode ? "التبديل للوضع الفاتح" : "التبديل للوضع الداكن"} title={isDarkMode ? "الوضع الفاتح" : "الوضع الداكن"}>{isDarkMode ? <Sun size={16} /> : <Moon size={16} />}<span>{isDarkMode ? "فاتح" : "داكن"}</span></button>
             <div className={`save-state ${savedPulse ? "is-saving" : ""}`}>
               <span className="save-dot" />
@@ -464,6 +503,7 @@ export default function Home() {
             </div>
           </div>
         </header>
+        {showInstallGuide && <div className="install-guide" role="status"><Download size={16} /><span>من الهاتف افتح قائمة المتصفح ثم اختر «إضافة إلى الشاشة الرئيسية» أو «Install app».</span><button type="button" onClick={() => setShowInstallGuide(false)} aria-label="إغلاق التعليمات">×</button></div>}
 
         <section className="hero-section">
           <div className="hero-copy">

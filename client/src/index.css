@@ -183,3 +183,15 @@ html.dark-mode, html.dark-mode body { background: #0d1422; }
 .dark-mode .manager-row button { background: #3a252d; color: #f19aa4; }
 .dark-mode .manager-save { color: #092018; }
 .dark-mode .status-button:not(.is-checked):hover, .dark-mode .timer-icon-button:hover { background: #22314d; }
+
+
+.install-button { display: inline-flex; align-items: center; gap: 6px; padding: 7px 10px; border: 1px solid #dfe5f2; border-radius: 8px; color: var(--royal); background: var(--royal-soft); font-size: 10px; font-weight: 800; transition: transform .18s, border-color .18s, background .18s; }
+.install-button:hover { transform: translateY(-1px); border-color: #b9c7ff; }
+.install-guide { display: flex; align-items: center; gap: 9px; margin-top: 12px; padding: 10px 14px; border: 1px solid #dbe3ff; border-radius: 10px; color: #66728b; background: var(--royal-soft); font-size: 11px; font-weight: 700; }
+.install-guide svg { flex: 0 0 auto; color: var(--royal); }
+.install-guide button { width: 22px; height: 22px; margin-right: auto; border: 0; border-radius: 6px; color: #8793aa; background: transparent; font-size: 18px; line-height: 1; }
+.install-guide button:hover { color: var(--royal); background: rgba(49,87,213,.09); }
+.dark-mode .install-button { border-color: #405684; color: #b8c6ff; background: #202e59; }
+.dark-mode .install-guide { border-color: #405684; color: #bdc7dc; background: #202e59; }
+.dark-mode .install-guide button { color: #b6c1d7; }
+@media (max-width: 620px) { .topbar-actions { gap: 7px; }.topbar-actions .save-state span:last-child { display: none; }.install-button span, .theme-toggle span { display: none; }.install-button, .theme-toggle { width: 32px; height: 32px; justify-content: center; padding: 0; } .install-guide { align-items: flex-start; font-size: 10px; line-height: 1.6; } }
