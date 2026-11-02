@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
+  Bell,
   BookOpen,
   Check,
   CircleCheck,
@@ -189,6 +190,7 @@ function CheckCell({ checked, label, onClick }: { checked: boolean; label: strin
 function PomodoroTimer({ subjects, onStudySecond }: { subjects: SubjectConfig[]; onStudySecond: (subject: Subject) => void }) {
   const [timer, setTimer] = useState<TimerState>(() => loadTimer(subjects));
   const audioContextRef = useRef<AudioContext | null>(null);
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | "unsupported">(() => typeof Notification === "undefined" ? "unsupported" : Notification.permission);
   const mode = TIMER_MODES[timer.mode];
 
   const ensureAudioContext = useCallback(() => {
@@ -222,6 +224,22 @@ function PomodoroTimer({ subjects, onStudySecond }: { subjects: SubjectConfig[];
     [523, 659, 784, 1046].forEach((frequency, index) => playTone(frequency, 0.24, 0.08, index * 0.12));
   }, [playTone]);
 
+  const notifyCompletion = useCallback((completedMode: TimerMode, subject: Subject) => {
+    if (notificationPermission !== "granted" || typeof Notification === "undefined") return;
+    const isFocus = completedMode === "focus";
+    new Notification(isFocus ? "انتهت جلسة التركيز" : "انتهت الاستراحة", {
+      body: isFocus ? `أحسنت! انتهت جلسة ${subject} وحان وقت الراحة.` : "انتهت الراحة، حان وقت العودة للمذاكرة.",
+      icon: `${import.meta.env.BASE_URL}icon-192.png`,
+      tag: "studytrack-pomodoro",
+    });
+  }, [notificationPermission]);
+
+  const requestNotifications = async () => {
+    if (typeof Notification === "undefined") return;
+    const permission = await Notification.requestPermission();
+    setNotificationPermission(permission);
+  };
+
   useEffect(() => {
     if (!subjects.some((subject) => subject.name === timer.subject)) setTimer((current) => ({ ...current, subject: subjects[0]?.name ?? "" }));
   }, [subjects, timer.subject]);
@@ -234,7 +252,10 @@ function PomodoroTimer({ subjects, onStudySecond }: { subjects: SubjectConfig[];
     if (!timer.isRunning) return;
     const interval = window.setInterval(() => {
       if (timer.mode === "focus") onStudySecond(timer.subject);
-      if (timer.secondsLeft <= 1) playCompletion();
+      if (timer.secondsLeft <= 1) {
+        playCompletion();
+        notifyCompletion(timer.mode, timer.subject);
+      }
       else playTick();
       setTimer((current) => {
         if (current.secondsLeft > 1) return { ...current, secondsLeft: current.secondsLeft - 1 };
@@ -249,7 +270,7 @@ function PomodoroTimer({ subjects, onStudySecond }: { subjects: SubjectConfig[];
       });
     }, 1000);
     return () => window.clearInterval(interval);
-  }, [onStudySecond, playCompletion, playTick, timer.isRunning, timer.mode, timer.secondsLeft, timer.subject]);
+  }, [notifyCompletion, onStudySecond, playCompletion, playTick, timer.isRunning, timer.mode, timer.secondsLeft, timer.subject]);
 
   const chooseMode = (nextMode: TimerMode) => {
     setTimer((current) => ({ ...current, mode: nextMode, secondsLeft: TIMER_MODES[nextMode].duration, isRunning: false }));
@@ -287,6 +308,7 @@ function PomodoroTimer({ subjects, onStudySecond }: { subjects: SubjectConfig[];
         <button type="button" className="timer-icon-button" onClick={resetTimer} aria-label="إعادة ضبط المؤقت" title="إعادة ضبط"><TimerReset size={17} /></button>
         <button type="button" className="timer-icon-button" onClick={skipMode} aria-label="تخطي الوضع الحالي" title="تخطي"><SkipForward size={17} /></button>
       </div>
+      <button type="button" className={`notification-button ${notificationPermission === "granted" ? "is-enabled" : ""}`} onClick={requestNotifications} disabled={notificationPermission === "unsupported" || notificationPermission === "granted"} title={notificationPermission === "granted" ? "الإشعارات مفعلة" : "تفعيل إشعار انتهاء المؤقت"}><Bell size={14} />{notificationPermission === "granted" ? "الإشعارات مفعلة" : notificationPermission === "denied" ? "اسمح بالإشعارات من إعدادات المتصفح" : "فعّل الإشعارات"}</button>
       <div className="pomodoro-sessions"><span className="session-dots" aria-hidden="true"><i className={timer.sessionsCompleted > 0 ? "filled" : ""} /><i className={timer.sessionsCompleted > 1 ? "filled" : ""} /><i className={timer.sessionsCompleted > 2 ? "filled" : ""} /><i className={timer.sessionsCompleted > 3 ? "filled" : ""} /></span><span>{timer.sessionsCompleted} جلسة تركيز مكتملة</span></div>
     </section>
   );

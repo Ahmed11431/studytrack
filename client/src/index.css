@@ -195,3 +195,14 @@ html.dark-mode, html.dark-mode body { background: #0d1422; }
 .dark-mode .install-guide { border-color: #405684; color: #bdc7dc; background: #202e59; }
 .dark-mode .install-guide button { color: #b6c1d7; }
 @media (max-width: 620px) { .topbar-actions { gap: 7px; }.topbar-actions .save-state span:last-child { display: none; }.install-button span, .theme-toggle span { display: none; }.install-button, .theme-toggle { width: 32px; height: 32px; justify-content: center; padding: 0; } .install-guide { align-items: flex-start; font-size: 10px; line-height: 1.6; } }
+
+
+.notification-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 31px; padding: 7px 9px; border: 1px solid #dfe5f2; border-radius: 8px; color: #7c879d; background: rgba(255,255,255,.72); font-size: 9px; font-weight: 800; white-space: nowrap; transition: border-color .18s, color .18s, background .18s; }
+.notification-button:hover:not(:disabled) { border-color: #b9c7ff; color: var(--royal); background: var(--royal-soft); }
+.notification-button.is-enabled { border-color: #bde8d8; color: var(--green); background: var(--green-soft); }
+.notification-button:disabled { cursor: default; opacity: .9; }
+.dark-mode .notification-button { border-color: #35445e; color: #b0bad0; background: #17243a; }
+.dark-mode .notification-button:hover:not(:disabled) { border-color: #5d78db; color: #dbe3ff; background: #243564; }
+.dark-mode .notification-button.is-enabled { border-color: #2d6b58; color: #72d6b3; background: #173f39; }
+@media (max-width: 980px) { .notification-button { justify-self: start; } }
+@media (max-width: 620px) { .notification-button { grid-column: 1 / -1; width: 100%; } }
