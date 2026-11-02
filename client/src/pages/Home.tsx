@@ -188,7 +188,39 @@ function CheckCell({ checked, label, onClick }: { checked: boolean; label: strin
 
 function PomodoroTimer({ subjects, onStudySecond }: { subjects: SubjectConfig[]; onStudySecond: (subject: Subject) => void }) {
   const [timer, setTimer] = useState<TimerState>(() => loadTimer(subjects));
+  const audioContextRef = useRef<AudioContext | null>(null);
   const mode = TIMER_MODES[timer.mode];
+
+  const ensureAudioContext = useCallback(() => {
+    if (!audioContextRef.current) {
+      const AudioContextConstructor = window.AudioContext ?? (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!AudioContextConstructor) return null;
+      audioContextRef.current = new AudioContextConstructor();
+    }
+    if (audioContextRef.current.state === "suspended") void audioContextRef.current.resume();
+    return audioContextRef.current;
+  }, []);
+
+  const playTone = useCallback((frequency: number, duration: number, volume: number, delay = 0) => {
+    const context = ensureAudioContext();
+    if (!context) return;
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    const start = context.currentTime + delay;
+    oscillator.type = "sine";
+    oscillator.frequency.setValueAtTime(frequency, start);
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.exponentialRampToValueAtTime(volume, start + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+    oscillator.connect(gain).connect(context.destination);
+    oscillator.start(start);
+    oscillator.stop(start + duration + 0.02);
+  }, [ensureAudioContext]);
+
+  const playTick = useCallback(() => playTone(880, 0.045, 0.035), [playTone]);
+  const playCompletion = useCallback(() => {
+    [523, 659, 784, 1046].forEach((frequency, index) => playTone(frequency, 0.24, 0.08, index * 0.12));
+  }, [playTone]);
 
   useEffect(() => {
     if (!subjects.some((subject) => subject.name === timer.subject)) setTimer((current) => ({ ...current, subject: subjects[0]?.name ?? "" }));
@@ -202,6 +234,8 @@ function PomodoroTimer({ subjects, onStudySecond }: { subjects: SubjectConfig[];
     if (!timer.isRunning) return;
     const interval = window.setInterval(() => {
       if (timer.mode === "focus") onStudySecond(timer.subject);
+      if (timer.secondsLeft <= 1) playCompletion();
+      else playTick();
       setTimer((current) => {
         if (current.secondsLeft > 1) return { ...current, secondsLeft: current.secondsLeft - 1 };
         const nextMode: TimerMode = current.mode === "focus" ? "break" : "focus";
@@ -215,7 +249,7 @@ function PomodoroTimer({ subjects, onStudySecond }: { subjects: SubjectConfig[];
       });
     }, 1000);
     return () => window.clearInterval(interval);
-  }, [onStudySecond, timer.isRunning, timer.mode, timer.subject]);
+  }, [onStudySecond, playCompletion, playTick, timer.isRunning, timer.mode, timer.secondsLeft, timer.subject]);
 
   const chooseMode = (nextMode: TimerMode) => {
     setTimer((current) => ({ ...current, mode: nextMode, secondsLeft: TIMER_MODES[nextMode].duration, isRunning: false }));
@@ -249,7 +283,7 @@ function PomodoroTimer({ subjects, onStudySecond }: { subjects: SubjectConfig[];
         <div><strong>{formatTimer(timer.secondsLeft)}</strong><span>{timer.isRunning ? "جاري الآن" : "جاهز للبدء"}</span></div>
       </div>
       <div className="pomodoro-controls">
-        <button type="button" className="timer-main-button" onClick={() => setTimer((current) => ({ ...current, isRunning: !current.isRunning }))} aria-label={timer.isRunning ? "إيقاف المؤقت" : "تشغيل المؤقت"}>{timer.isRunning ? <Pause size={15} /> : <Play size={15} />}{timer.isRunning ? "إيقاف مؤقت" : "ابدأ الآن"}</button>
+        <button type="button" className="timer-main-button" onClick={() => { if (!timer.isRunning) void ensureAudioContext(); setTimer((current) => ({ ...current, isRunning: !current.isRunning })); }} aria-label={timer.isRunning ? "إيقاف المؤقت" : "تشغيل المؤقت"}>{timer.isRunning ? <Pause size={15} /> : <Play size={15} />}{timer.isRunning ? "إيقاف مؤقت" : "ابدأ الآن"}</button>
         <button type="button" className="timer-icon-button" onClick={resetTimer} aria-label="إعادة ضبط المؤقت" title="إعادة ضبط"><TimerReset size={17} /></button>
         <button type="button" className="timer-icon-button" onClick={skipMode} aria-label="تخطي الوضع الحالي" title="تخطي"><SkipForward size={17} /></button>
       </div>
